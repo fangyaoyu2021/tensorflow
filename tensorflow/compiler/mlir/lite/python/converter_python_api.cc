@@ -385,7 +385,7 @@ PyObject* MlirQuantizeModel(PyObject* data, bool disable_per_channel,
       /*legacy_float_scale=*/true, denylisted_ops, denylisted_nodes,
       enable_variable_quantization, disable_per_channel_for_dense_layers,
       debug_options);
-  if (status != kTfLiteOk) {
+  if (!status.ok()) {
     error_reporter->exception();
     return nullptr;
   }

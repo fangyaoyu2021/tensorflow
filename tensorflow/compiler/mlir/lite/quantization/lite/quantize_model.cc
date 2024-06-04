@@ -21,6 +21,7 @@ limitations under the License.
 
 #include "absl/container/flat_hash_set.h"
 #include "absl/log/log.h"
+#include "absl/status/status.h"
 #include "absl/strings/string_view.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
@@ -43,7 +44,6 @@ limitations under the License.
 #include "tensorflow/compiler/mlir/quantization/common/quantization_lib/quantization_config.h"
 #include "tensorflow/compiler/mlir/tensorflow/utils/error_util.h"
 #include "tensorflow/core/framework/types.pb.h"
-#include "tensorflow/lite/c/c_api_types.h"
 
 namespace mlir {
 namespace lite {
@@ -54,7 +54,7 @@ std::string TfLiteToMlir(const absl::string_view tflite_op_name) {
 }
 
 // TODO(fengliuai): check the result for `fully_quantize` flag.
-TfLiteStatus QuantizeModel(
+absl::Status QuantizeModel(
     const absl::string_view model_buffer, const tflite::TensorType &input_type,
     const tflite::TensorType &output_type,
     const tflite::TensorType &inference_type,
@@ -83,7 +83,7 @@ TfLiteStatus QuantizeModel(
       model_buffer, &context, UnknownLoc::get(&context));
   if (!module) {
     LOG(ERROR) << "Couldn't import flatbuffer to MLIR.";
-    return kTfLiteError;
+    return absl::InternalError("Couldn't import flatbuffer to MLIR.");
   }
 
   // Apply quantization passes.
@@ -129,7 +129,7 @@ TfLiteStatus QuantizeModel(
   if (failed(pm.run(module.get()))) {
     const std::string err(statusHandler.ConsumeStatus().message());
     LOG(ERROR) << "Failed to quantize: " << err;
-    return kTfLiteError;
+    return absl::InternalError(err);
   }
 
   // Export the results.
@@ -140,9 +140,9 @@ TfLiteStatus QuantizeModel(
   if (!tflite::MlirToFlatBufferTranslateFunction(module.get(), options,
                                                  &output_buffer)) {
     LOG(ERROR) << "Failed to export MLIR to flatbuffer.";
-    return kTfLiteError;
+    return absl::InternalError("Failed to export MLIR to flatbuffer.");
   }
-  return kTfLiteOk;
+  return absl::OkStatus();
 }
 
 }  // namespace lite
