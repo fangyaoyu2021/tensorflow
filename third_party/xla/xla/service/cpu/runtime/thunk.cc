@@ -38,6 +38,8 @@ std::string_view Thunk::KindToString(Kind kind) {
       return "copy";
     case Kind::kConditional:
       return "conditional";
+    case Kind::kConvolution:
+      return "convolution";
     case Kind::kDot:
       return "dot";
     case Kind::kInfeed:
