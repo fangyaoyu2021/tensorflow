@@ -86,6 +86,7 @@ limitations under the License.
 #include "tensorflow/compiler/mlir/lite/metrics/error_collector_inst.h"
 #include "tensorflow/compiler/mlir/lite/quantization/ir/QuantOps.h"
 #include "tensorflow/compiler/mlir/lite/schema/mutable/schema_generated.h"
+#include "tensorflow/compiler/mlir/lite/schema/schema_conversion_utils.h"
 #include "tensorflow/compiler/mlir/lite/utils/convert_type.h"
 #include "tensorflow/compiler/mlir/lite/utils/low_bit_utils.h"
 #include "tensorflow/compiler/mlir/lite/utils/stateful_ops_utils.h"
@@ -110,9 +111,7 @@ limitations under the License.
 #include "tensorflow/lite/core/macros.h"
 #include "tensorflow/lite/delegates/flex/allowlisted_flex_ops.h"
 #include "tensorflow/lite/experimental/remat/metadata_util.h"
-#include "tensorflow/lite/graph_info.h"
 #include "tensorflow/lite/python/metrics/converter_error_data.pb.h"
-#include "tensorflow/lite/schema/schema_conversion_utils.h"
 #include "tensorflow/lite/toco/toco_flags.pb.h"
 #include "tensorflow/lite/tools/versioning/gpu_compatibility.h"
 #include "tensorflow/lite/tools/versioning/op_version.h"
@@ -154,6 +153,12 @@ template <typename T>
 using VectorBufferOffset = flatbuffers::Offset<flatbuffers::Vector<T>>;
 
 using CustomOptionsOffset = VectorBufferOffset<uint8_t>;
+
+// LINT.IfChange
+// Node edge.second depends on node edge.first.
+using ControlEdge = std::pair<int32_t, int32_t>;
+using ControlEdges = std::vector<ControlEdge>;
+// LINT.ThenChange(//tensorflow/lite/graph_info.h)
 
 namespace tfl = mlir::TFL;
 
@@ -994,11 +999,11 @@ std::optional<BufferOffset<tflite::Buffer>> Translator::BuildBuffer(
   // TensorFlow and TensorFlow Lite use different string encoding formats.
   // Convert to TensorFlow Lite format is it's a constant string tensor.
   if (tensor.dtype() == tensorflow::DT_STRING) {
-    ::mlir::TFL::MiniDynamicBuffer dynamic_buffer;
+    ::mlir::TFL::SimpleDynamicBuffer dynamic_buffer;
     auto flat = tensor.flat<::tensorflow::tstring>();
     for (int i = 0; i < flat.size(); ++i) {
       const auto& str = flat(i);
-      if (!dynamic_buffer.AddString(str.c_str(), str.length()).ok()) {
+      if (!dynamic_buffer.AddString(str.c_str(), str.length())) {
         inst->emitError(
             Twine("failed to add string to dynamic buffer with error: " +
                   status.ToString()));
