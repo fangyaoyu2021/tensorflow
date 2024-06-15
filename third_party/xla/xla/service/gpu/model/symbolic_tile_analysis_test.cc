@@ -24,7 +24,10 @@ limitations under the License.
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/algorithm/container.h"
+#include "absl/log/log.h"
 #include "absl/status/status.h"
+#include "absl/strings/str_join.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
 #include "mlir/IR/MLIRContext.h"  // from @llvm-project
@@ -33,20 +36,26 @@ limitations under the License.
 #include "xla/service/gpu/model/indexing_test_utils.h"
 #include "xla/service/gpu/model/tiled_hlo_computation.h"
 #include "xla/service/gpu/model/tiled_hlo_instruction.h"
+#include "xla/service/instruction_fusion.h"
 #include "xla/tests/hlo_test_base.h"
 #include "xla/tests/verified_hlo_module.h"
+#include "xla/util.h"
 #include "tsl/platform/statusor.h"
 
 namespace xla {
 namespace gpu {
 namespace {
 
+using detail::GetGoodTilings;
 using ::testing::ElementsAreArray;
 using ::testing::ExplainMatchResult;
+using ::testing::IsEmpty;
 using ::testing::Matcher;
+using ::testing::Not;
 using ::testing::SizeIs;
 using ::testing::status::IsOkAndHolds;
 using ::testing::status::StatusIs;
+using TilingVector = std::vector<SymbolicTileAnalysis::Tiling>;
 
 MATCHER_P3(MatchTiledHloInstructionImpl, tile_sizes, tile_strides,
            block_id_to_tile_offsets_indexing, "") {
@@ -80,6 +89,8 @@ class SymbolicTileAnalysisTest : public HloTestBase {
     if (std::holds_alternative<SymbolicTileAnalysis>(analysis_or_error)) {
       return std::get<SymbolicTileAnalysis>(std::move(analysis_or_error));
     }
+    VLOG(1) << "Cannot analyze module: "
+            << std::get<FusionDecision>(analysis_or_error).Explain();
     return std::nullopt;
   }
 
@@ -504,6 +515,175 @@ ENTRY main {
   ROOT fusion = f32[48,32]{1,0} fusion(p0, p1), kind=kLoop, calls=fusion
 })"));
   EXPECT_FALSE(TryAnalyzeModule(module.get()).has_value());
+}
+
+bool AlwaysValid(absl::Span<const int64_t>) { return true; }
+
+TEST(GetGoodTilingsTest, ReturnsOneTilingWhenRankIsZero) {
+  EXPECT_EQ(GetGoodTilings({}, AlwaysValid),
+            TilingVector{SymbolicTileAnalysis::Tiling{}});
+}
+
+TEST(GetGoodTilingsTest, ReturnsPowersOfTwoAndTheDimSizeForRankOne) {
+  EXPECT_EQ(GetGoodTilings({1}, AlwaysValid), TilingVector{{1}});
+  EXPECT_EQ(GetGoodTilings({2}, AlwaysValid), TilingVector({{1}, {2}}));
+  EXPECT_EQ(GetGoodTilings({3}, AlwaysValid), TilingVector({{1}, {2}, {3}}));
+  EXPECT_EQ(GetGoodTilings({4}, AlwaysValid), TilingVector({{1}, {2}, {4}}));
+  EXPECT_EQ(GetGoodTilings({5}, AlwaysValid),
+            TilingVector({{1}, {2}, {4}, {5}}));
+  EXPECT_EQ(GetGoodTilings({11}, AlwaysValid),
+            TilingVector({{1}, {2}, {4}, {8}, {11}}));
+}
+
+TEST(GetGoodTilingsTest, CreatesCartesianProductForRankTwo) {
+  EXPECT_EQ(GetGoodTilings({3, 4}, AlwaysValid), TilingVector({{1, 1},
+                                                               {1, 2},
+                                                               {1, 4},
+                                                               {2, 1},
+                                                               {2, 2},
+                                                               {2, 4},
+                                                               {3, 1},
+                                                               {3, 2},
+                                                               {3, 4}}));
+}
+
+TEST(GetGoodTilingsTest, CreatesCartesianProductForRankThree) {
+  EXPECT_EQ(GetGoodTilings({3, 4, 2}, AlwaysValid), TilingVector({{1, 1, 1},
+                                                                  {1, 1, 2},
+                                                                  {1, 2, 1},
+                                                                  {1, 2, 2},
+                                                                  {1, 4, 1},
+                                                                  {1, 4, 2},
+                                                                  {2, 1, 1},
+                                                                  {2, 1, 2},
+                                                                  {2, 2, 1},
+                                                                  {2, 2, 2},
+                                                                  {2, 4, 1},
+                                                                  {2, 4, 2},
+                                                                  {3, 1, 1},
+                                                                  {3, 1, 2},
+                                                                  {3, 2, 1},
+                                                                  {3, 2, 2},
+                                                                  {3, 4, 1},
+                                                                  {3, 4, 2}}));
+}
+
+TEST(GetGoodTilingsTest, FiltersTheTilingsUsingThePredicate) {
+  auto all_even = [](absl::Span<const int64_t> tile_sizes) {
+    return absl::c_all_of(tile_sizes,
+                          [](int64_t tile_size) { return tile_size % 2 == 0; });
+  };
+
+  EXPECT_EQ(GetGoodTilings({3, 4}, all_even), TilingVector({{2, 2}, {2, 4}}));
+
+  auto all_equal = [](absl::Span<const int64_t> tile_sizes) {
+    return absl::c_all_of(tile_sizes, [&](int64_t tile_size) {
+      return tile_size == tile_sizes.at(0);
+    });
+  };
+
+  EXPECT_EQ(GetGoodTilings({3, 3, 3}, all_equal),
+            TilingVector({{1, 1, 1}, {2, 2, 2}, {3, 3, 3}}));
+}
+
+TEST_F(SymbolicTileAnalysisTest,
+       GetGoodTilingsWorksTakingConstraintsIntoAccount) {
+  // The module was chosen (from SymbolicTileTest) because it has a constraint
+  // on the tile sizes.
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> module,
+                          ParseAndReturnVerifiedModule(R"(
+fusion {
+  p0 = f32[1,8,6,4]{3,2,1,0} parameter(0)
+  ROOT bitcast = f32[48,4]{1,0} bitcast(p0)
+}
+
+ENTRY main {
+  p0 = f32[1,8,6,4]{3,2,1,0} parameter(0)
+  ROOT fusion = f32[48,4]{1,0} fusion(p0), kind=kLoop, calls=fusion
+})"));
+
+  std::optional<SymbolicTileAnalysis> opt_analysis =
+      TryAnalyzeModule(module.get());
+  ASSERT_TRUE(opt_analysis.has_value());
+
+  const SymbolicTileAnalysis& analysis = opt_analysis.value();
+  TF_ASSERT_OK_AND_ASSIGN(
+      std::vector<SymbolicTileAnalysis::Tiling> good_tilings,
+      analysis.GetGoodTilings());
+  // The constraint on the 1st dimension is "s0 mod 6 in [0, 0]", and only 48
+  // fulfills that from the set of possible tile sizes (1, 2, 4, 8, 16, 32, 48).
+  // There is no constraint on the 2nd dimension.
+  EXPECT_EQ(good_tilings, std::vector<SymbolicTileAnalysis::Tiling>(
+                              {{48, 1}, {48, 2}, {48, 4}}));
+}
+
+// Logs the tilings if VLOG level 1 is enabled.
+//
+// Use these arguments to see the log:
+// --test_output=all
+// --test_arg=--logtostderr
+// --test_arg=--vmodule=symbolic_tile_analysis_test=1
+void LogTilingsIfVlog1(absl::Span<const SymbolicTileAnalysis::Tiling> tilings) {
+  if (VLOG_IS_ON(1)) {
+    LOG(INFO) << "Tilings: {";
+    for (const SymbolicTileAnalysis::Tiling& tiling : tilings) {
+      LOG(INFO) << "{" << absl::StrJoin(tiling, ",") << "},";
+    }
+    LOG(INFO) << "}";
+  }
+}
+
+TEST_F(SymbolicTileAnalysisTest, GetGoodTilingsWorksForSoftmaxExample) {
+  // The example is from
+  // https://github.com/google/paxml/blob/91893818862645f5e9f23b84f530e611551745f6/paxml/contrib/gpu/scripts_gpu/configs.py#L107-L120.
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> module,
+                          ParseAndReturnVerifiedModule(R"(
+HloModule m
+
+region {
+  param_0 = f32[] parameter(0)
+  param_1 = f32[] parameter(1)
+  ROOT maximum = f32[] maximum(param_0, param_1)
+}
+
+region.1 {
+  param_0 = f32[] parameter(0)
+  param_1 = f32[] parameter(1)
+  ROOT add = f32[] add(param_0, param_1)
+}
+
+fused_computation {
+  param_0 = f32[8192,50304] parameter(0)
+  bitcast = f32[4,2048,50304] bitcast(param_0)
+  constant = f32[] constant(-inf)
+  reduce = f32[8192] reduce(param_0, constant), dimensions={1}, to_apply=region
+  bitcast.1 = f32[4,2048] bitcast(reduce)
+  broadcast = f32[4,2048,50304] broadcast(bitcast.1), dimensions={0,1}
+  subtract = f32[4,2048,50304] subtract(bitcast, broadcast)
+  exponential = f32[4,2048,50304] exponential(subtract)
+  constant.1 = f32[] constant(0)
+  reduce.1 = f32[4,2048] reduce(exponential, constant.1), dimensions={2}, to_apply=region.1
+  log = f32[4,2048] log(reduce.1)
+  broadcast.1 = f32[4,2048,50304] broadcast(log), dimensions={0,1}
+  ROOT subtract.1 = f32[4,2048,50304] subtract(subtract, broadcast.1)
+}
+
+ENTRY entry_computation {
+  param_0 = f32[8192,50304] parameter(0)
+  ROOT fusion = f32[4,2048,50304] fusion(param_0), kind=kCustom, calls=fused_computation, backend_config={"fusion_backend_config":{"kind":"__triton_softmax"}}
+}
+)"));
+
+  std::optional<SymbolicTileAnalysis> opt_analysis =
+      TryAnalyzeModule(module.get());
+  ASSERT_TRUE(opt_analysis.has_value());
+  const SymbolicTileAnalysis& analysis = opt_analysis.value();
+
+  TF_ASSERT_OK_AND_ASSIGN(
+      std::vector<SymbolicTileAnalysis::Tiling> good_tilings,
+      analysis.GetGoodTilings());
+  EXPECT_THAT(good_tilings, Not(IsEmpty()));
+  LogTilingsIfVlog1(good_tilings);
 }
 
 }  // namespace
