@@ -3425,6 +3425,7 @@ cc_library(
         ":custom_kernel_fusion_rewriter",
         ":dot_dimension_sorter",
         ":dot_operand_converter",
+        ":double_buffer_loop_unrolling",
         ":executable_proto_cc",
         ":fusion_merger",
         ":fusion_wrapper",
@@ -3451,7 +3452,7 @@ cc_library(
         ":instruction_fusion",
         ":ir_emission_utils",
         ":ir_emitter",
-        ":double_buffer_loop_unrolling",
+        ":kernel_reuse_cache",
         ":matmul_utils",
         ":metrics",
         ":move_copy_to_users",
@@ -3625,6 +3626,7 @@ cc_library(
         ":command_buffer_scheduling",
         ":execution_stream_assignment",
         ":fusion_pipeline",
+        ":gpu_latency_hiding_scheduler",
         ":ir_emitter_context",
         ":ir_emitter_unnested",
         ":prepare_hlo_for_ir_emitting_pipeline",
@@ -3872,6 +3874,7 @@ xla_test(
     deps = [
         ":gpu_constants",
         ":gpu_hlo_schedule",
+        ":gpu_latency_hiding_scheduler",
         ":nvptx_compiler_impl",
         "//xla:util",
         "//xla:xla_proto_cc",
@@ -4231,11 +4234,9 @@ cc_library(
     hdrs = ["gpu_hlo_schedule.h"],
     deps = [
         ":backend_configs_cc",
-        ":cublas_cudnn",
         ":gpu_latency_hiding_scheduler",
         ":gpu_schedule_postprocessing",
         "//xla:shape_util",
-        "//xla:statusor",
         "//xla:util",
         "//xla/hlo/ir:hlo",
         "//xla/hlo/utils:hlo_query",
@@ -5730,7 +5731,9 @@ xla_cc_test(
     deps = [
         ":kernel_reuse_cache",
         "//xla/tests:xla_internal_test_main",
+        "@com_google_googletest//:gtest",
         "@local_tsl//tsl/lib/core:status_test_util",
+        "@local_tsl//tsl/platform:env",
         "@local_tsl//tsl/platform:test",
     ],
 )
@@ -6257,6 +6260,8 @@ cc_library(
     hdrs = ["gpu_latency_hiding_scheduler.h"],
     deps = [
         ":backend_configs_cc",
+        ":cublas_cudnn",
+        "//xla:shape_util",
         "//xla/hlo/ir:hlo",
         "//xla/hlo/utils:hlo_query",
         "//xla/service:collective_ops_utils",
