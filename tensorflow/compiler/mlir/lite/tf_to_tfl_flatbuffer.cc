@@ -49,6 +49,7 @@ limitations under the License.
 #include "tensorflow/compiler/mlir/lite/flatbuffer_export.h"
 #include "tensorflow/compiler/mlir/lite/metrics/error_collector.h"
 #include "tensorflow/compiler/mlir/lite/metrics/error_collector_inst.h"
+#include "tensorflow/compiler/mlir/lite/python/metrics/converter_error_data.pb.h"
 #include "tensorflow/compiler/mlir/lite/quantization/stablehlo/quantization.h"
 #include "tensorflow/compiler/mlir/lite/schema/schema_generated.h"
 #include "tensorflow/compiler/mlir/lite/stablehlo/transforms/op_stat_pass.h"
@@ -80,7 +81,6 @@ limitations under the License.
 #include "tensorflow/core/public/session.h"
 #include "tensorflow/lite/c/c_api_types.h"
 #include "tensorflow/lite/experimental/remat/metadata_util.h"
-#include "tensorflow/lite/python/metrics/converter_error_data.pb.h"
 #include "tensorflow/lite/tools/optimize/quantize_weights.h"
 #include "tensorflow/lite/tools/optimize/reduced_precision_support.h"
 #include "tsl/platform/protobuf.h"  // IWYU pragma: keep
