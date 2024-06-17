@@ -53,6 +53,41 @@ HostStream::~HostStream() {
   parent()->DeallocateStream(this);
 }
 
+absl::Status HostStream::Memcpy(void* host_dst, const DeviceMemoryBase& gpu_src,
+                                uint64_t size) {
+  // Enqueue the [asynchronous] memcpy on the stream (HostStream) associated
+  // with the HostExecutor.
+  void* src_mem = const_cast<void*>(gpu_src.opaque());
+  EnqueueTask([host_dst, src_mem, size]() { memcpy(host_dst, src_mem, size); });
+  return absl::OkStatus();
+}
+
+absl::Status HostStream::Memcpy(DeviceMemoryBase* gpu_dst, const void* host_src,
+                                uint64_t size) {
+  void* dst_mem = gpu_dst->opaque();
+  // Enqueue the [asynchronous] memcpy on the stream (HostStream) associated
+  // with the HostExecutor.
+  EnqueueTask([dst_mem, host_src, size]() { memcpy(dst_mem, host_src, size); });
+  return absl::OkStatus();
+}
+
+absl::Status HostStream::Memset32(DeviceMemoryBase* location, uint32_t pattern,
+                                  uint64_t size) {
+  void* gpu_mem = location->opaque();
+  // Enqueue the [asynchronous] memzero on the stream (HostStream) associated
+  // with the HostExecutor.
+  EnqueueTask([gpu_mem, size, pattern]() { memset(gpu_mem, pattern, size); });
+  return absl::OkStatus();
+}
+
+absl::Status HostStream::MemZero(DeviceMemoryBase* location, uint64_t size) {
+  void* gpu_mem = location->opaque();
+  // Enqueue the [asynchronous] memzero on the stream (HostStream) associated
+  // with the HostExecutor.
+  EnqueueTask([gpu_mem, size]() { memset(gpu_mem, 0, size); });
+  return absl::OkStatus();
+}
+
 absl::Status HostStream::WaitFor(Stream* other) {
   auto event = std::make_shared<absl::Notification>();
   static_cast<HostStream*>(other)->EnqueueTask([event]() { event->Notify(); });

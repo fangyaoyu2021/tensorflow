@@ -90,26 +90,14 @@ class XlaInterpreterExecutor : public StreamExecutorCommon {
     delete[] static_cast<char *>(mem);
   }
 
-  absl::Status Memcpy(Stream *stream, void *host_dst,
-                      const DeviceMemoryBase &dev_src, uint64_t size) override;
-  absl::Status Memcpy(Stream *stream, DeviceMemoryBase *dev_dst,
-                      const void *host_src, uint64_t size) override;
   bool MemcpyDeviceToDevice(Stream *stream, DeviceMemoryBase *pop_dst,
                             const DeviceMemoryBase &host_src,
                             uint64_t size) override {
     return false;
   }
 
-  absl::Status MemZero(Stream *stream, DeviceMemoryBase *location,
-                       uint64_t size) override {
-    return absl::InternalError("Interpreter can not memzero");
-  }
   absl::Status Memset(Stream *stream, DeviceMemoryBase *location,
                       uint8_t pattern, uint64_t size) override {
-    return absl::InternalError("Interpreter can not memset");
-  }
-  absl::Status Memset32(Stream *stream, DeviceMemoryBase *location,
-                        uint32_t pattern, uint64_t size) override {
     return absl::InternalError("Interpreter can not memset");
   }
 

@@ -15,12 +15,14 @@ limitations under the License.
 
 #include "xla/stream_executor/gpu/gpu_stream.h"
 
+#include <cstdint>
 #include <variant>
 
 #include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_format.h"
+#include "xla/stream_executor/device_memory.h"
 #include "xla/stream_executor/event.h"
 #include "xla/stream_executor/gpu/gpu_driver.h"
 #include "xla/stream_executor/gpu/gpu_event.h"
@@ -54,6 +56,51 @@ Stream::PlatformSpecificHandle GpuStream::platform_specific_handle() const {
   PlatformSpecificHandle handle;
   handle.stream = gpu_stream_;
   return handle;
+}
+
+absl::Status GpuStream::Memset32(DeviceMemoryBase* location, uint32_t pattern,
+                                 uint64_t size) {
+  CHECK(reinterpret_cast<uintptr_t>(location->opaque()) % 4 == 0 &&
+        size % 4 == 0);
+  return GpuDriver::AsynchronousMemsetUint32(
+      parent_->gpu_context(),
+      reinterpret_cast<GpuDevicePtr>(location->opaque()), pattern, size / 4,
+      gpu_stream());
+}
+
+absl::Status GpuStream::MemZero(DeviceMemoryBase* location, uint64_t size) {
+  if (reinterpret_cast<uintptr_t>(location->opaque()) % 4 == 0 &&
+      size % 4 == 0) {
+    return Memset32(location, 0x0, size);
+  } else {
+    return parent_->Memset(this, location, 0x0, size);
+  }
+}
+
+absl::Status GpuStream::Memcpy(DeviceMemoryBase* gpu_dst, const void* host_src,
+                               uint64_t size) {
+  bool ok = GpuDriver::AsynchronousMemcpyH2D(
+      parent_->gpu_context(), reinterpret_cast<GpuDevicePtr>(gpu_dst->opaque()),
+      host_src, size, gpu_stream());
+  // TODO(b/326130105): Change AsynchronousMemcpyD2H calls to return
+  // absl::Status.
+  if (!ok) {
+    return absl::InternalError("Failed to memcpy from device to host.");
+  }
+  return absl::OkStatus();
+}
+
+absl::Status GpuStream::Memcpy(void* host_dst, const DeviceMemoryBase& gpu_src,
+                               uint64_t size) {
+  bool ok = GpuDriver::AsynchronousMemcpyD2H(
+      parent_->gpu_context(), host_dst,
+      reinterpret_cast<GpuDevicePtr>(gpu_src.opaque()), size, gpu_stream());
+  // TODO(b/326130105): Change AsynchronousMemcpyD2H calls to return
+  // absl::Status.
+  if (!ok) {
+    return absl::InternalError("Failed to memcpy from device to host.");
+  }
+  return absl::OkStatus();
 }
 
 absl::Status GpuStream::WaitFor(Stream* other) {
