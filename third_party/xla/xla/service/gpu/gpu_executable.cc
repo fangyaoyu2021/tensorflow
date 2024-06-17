@@ -123,7 +123,7 @@ static bool NeedsAsyncCommsStream(Thunk& thunk) {
 // `GpuExecutable`. At run time `Thunks` may use additional streams to launch
 // compute operations in parallel.
 static absl::flat_hash_set<ExecutionStreamId> GetExecutionStreamIds(
-    const ThunkSequence& thunks) {
+    const SequentialThunk& thunks) {
   absl::flat_hash_set<ExecutionStreamId> stream_ids;
   ForAllThunks(
       [&](const Thunk* thunk) {
@@ -355,7 +355,7 @@ absl::Status RendezvousAfterInitialization(
 
 absl::Status ExecuteThunks(
     const DebugOptions* debug_options, const std::string& module_name,
-    ModuleIdentifier module_id, const ThunkSequence& thunk_sequence,
+    ModuleIdentifier module_id, SequentialThunk& thunk_sequence,
     Thunk::ExecutableSource executable_source,
     const ServiceExecutableRunOptions* run_options,
     const BufferAllocations& buffer_allocations, bool block_host_until_done,
@@ -382,22 +382,19 @@ absl::Status ExecuteThunks(
   // Borrow streams required for NcclCollectiveThunk.
   absl::InlinedVector<se::Stream*, kAsyncStreamTotal> async_comms_streams(
       kAsyncStreamTotal, nullptr);
-  absl::StatusOr<std::vector<StreamPool::Ptr>> streams =
+  TF_ASSIGN_OR_RETURN(
+      std::vector<StreamPool::Ptr> async_comms_streams_ownr,
       run_options->BorrowStreams(executor->device_ordinal(), kAsyncStreamTotal,
-                                 stream_priority);
-  if (streams.ok()) {
-    for (int64_t i = 0; i < kAsyncStreamTotal; ++i) {
-      async_comms_streams[i] = streams->at(i).get();
-    }
+                                 stream_priority));
+  for (int64_t i = 0; i < kAsyncStreamTotal; ++i) {
+    async_comms_streams[i] = async_comms_streams_ownr[i].get();
   }
 
   // Borrow stream for tracing command buffers.
-  se::Stream* command_buffer_trace_stream = nullptr;
-  absl::StatusOr<StreamPool::Ptr> borrowed_command_buffer_trace_stream =
-      run_options->BorrowStream(executor->device_ordinal());
-  if (borrowed_command_buffer_trace_stream.ok()) {
-    command_buffer_trace_stream = borrowed_command_buffer_trace_stream->get();
-  }
+  TF_ASSIGN_OR_RETURN(StreamPool::Ptr borrowed_command_buffer_trace_stream,
+                      run_options->BorrowStream(executor->device_ordinal()));
+  se::Stream* command_buffer_trace_stream =
+      borrowed_command_buffer_trace_stream.get();
 
   // Borrow stream for additional compute streams
   Thunk::ExecutionStreamIdMap additional_execution_streams;
@@ -443,9 +440,8 @@ absl::Status ExecuteThunks(
     Thunk::PrepareParams prepare_params{&collective_params};
 
     tsl::profiler::TraceMe trace([&] { return "Thunks::Prepare"; });
-    for (const std::unique_ptr<Thunk>& thunk : thunk_sequence) {
-      TF_RETURN_IF_ERROR(thunk->Prepare(prepare_params, resource_requests));
-    }
+    TF_RETURN_IF_ERROR(
+        thunk_sequence.Prepare(prepare_params, resource_requests));
   }
 
   // Acquire collective cliques requested by thunks.
@@ -465,9 +461,7 @@ absl::Status ExecuteThunks(
         run_options->run_options().ffi_execution_context()};
 
     tsl::profiler::TraceMe trace([&] { return "Thunks::Initialize"; });
-    for (const std::unique_ptr<Thunk>& thunk : thunk_sequence) {
-      TF_RETURN_IF_ERROR(thunk->Initialize(initialize_params));
-    }
+    TF_RETURN_IF_ERROR(thunk_sequence.Initialize(initialize_params));
   }
 
   // Maybe join a round of rendezvous after thunk initialization. We do this
@@ -483,22 +477,8 @@ absl::Status ExecuteThunks(
       command_buffer_trace_stream, &collective_params, &collective_cliques,
       std::move(additional_execution_streams));
 
-  for (const std::unique_ptr<Thunk>& thunk : thunk_sequence) {
-    // Annotate execution of this op if tracing was enabled when we started
-    // running this module.  If tracing is enabled *while* we're running the
-    // module, we won't get any data, but that's probably an OK trade-off.
-    auto scoped_annotation =
-        GetKernelAnnotation(&module_annotations, thunk->profile_annotation());
-    VLOG(3) << "Executing the thunk for " << thunk->profile_annotation();
-    if (NeedsAsyncCommsStream(*thunk)) {
-      for (se::Stream* async_stream : async_comms_streams) {
-        TF_RET_CHECK(async_stream != nullptr)
-            << "`run_options` must have a stream borrower for async thunks.";
-      }
-    }
+  TF_RETURN_IF_ERROR(thunk_sequence.ExecuteOnStream(execute_params));
 
-    TF_RETURN_IF_ERROR(thunk->ExecuteOnStream(execute_params));
-  }
   return MaybeSyncAndProfile(run_options, std::move(execution_timer),
                              block_host_until_done ? main_stream : nullptr);
 }
