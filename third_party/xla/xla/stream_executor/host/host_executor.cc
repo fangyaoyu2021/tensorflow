@@ -154,16 +154,6 @@ absl::Status HostExecutor::Memcpy(Stream* stream, void* host_dst,
   return absl::OkStatus();
 }
 
-absl::Status HostExecutor::Memcpy(Stream* stream, DeviceMemoryBase* gpu_dst,
-                                  const void* host_src, uint64_t size) {
-  void* dst_mem = gpu_dst->opaque();
-  // Enqueue the [asynchronous] memcpy on the stream (HostStream) associated
-  // with the HostExecutor.
-  AsHostStream(stream)->EnqueueTask(
-      [dst_mem, host_src, size]() { memcpy(dst_mem, host_src, size); });
-  return absl::OkStatus();
-}
-
 bool HostExecutor::MemcpyDeviceToDevice(Stream* stream,
                                         DeviceMemoryBase* gpu_dst,
                                         const DeviceMemoryBase& gpu_src,
@@ -178,28 +168,8 @@ bool HostExecutor::MemcpyDeviceToDevice(Stream* stream,
   return true;
 }
 
-absl::Status HostExecutor::MemZero(Stream* stream, DeviceMemoryBase* location,
-                                   uint64_t size) {
-  void* gpu_mem = location->opaque();
-  // Enqueue the [asynchronous] memzero on the stream (HostStream) associated
-  // with the HostExecutor.
-  AsHostStream(stream)->EnqueueTask(
-      [gpu_mem, size]() { memset(gpu_mem, 0, size); });
-  return absl::OkStatus();
-}
-
 absl::Status HostExecutor::Memset(Stream* stream, DeviceMemoryBase* location,
                                   uint8 pattern, uint64_t size) {
-  void* gpu_mem = location->opaque();
-  // Enqueue the [asynchronous] memzero on the stream (HostStream) associated
-  // with the HostExecutor.
-  AsHostStream(stream)->EnqueueTask(
-      [gpu_mem, size, pattern]() { memset(gpu_mem, pattern, size); });
-  return absl::OkStatus();
-}
-
-absl::Status HostExecutor::Memset32(Stream* stream, DeviceMemoryBase* location,
-                                    uint32_t pattern, uint64_t size) {
   void* gpu_mem = location->opaque();
   // Enqueue the [asynchronous] memzero on the stream (HostStream) associated
   // with the HostExecutor.
