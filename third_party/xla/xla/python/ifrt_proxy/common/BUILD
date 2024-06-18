@@ -70,6 +70,7 @@ tf_proto_library(
         # copybara:uncomment "//google/protobuf:any",
         "//xla:xla_data_proto",
         "//xla/pjrt:execute_options_proto",
+        "//xla/python/ifrt:attribute_map_proto",
         "//xla/python/ifrt:dtype_proto",
         "//xla/python/ifrt:remap_plan_proto",
         "//xla/python/ifrt:serdes_proto",

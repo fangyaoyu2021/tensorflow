@@ -211,6 +211,7 @@ cc_library(
     compatible_with = get_compatible_with_portable(),
     deps = [
         ":basic_string_array",
+        ":pjrt_attribute_map_util",
         ":xla_ifrt",
         "//xla:literal",
         "//xla:shape_util",
@@ -231,6 +232,7 @@ cc_library(
         "//xla/pjrt/distributed:protocol_proto_cc",
         "//xla/pjrt/distributed:topology_util",
         "//xla/python/ifrt",
+        "//xla/python/ifrt:attribute_map",
         "//xla/python/ifrt/hlo:hlo_program",
         "//xla/service:hlo_proto_cc",
         "//xla/translate/mhlo_to_hlo:type_to_shape",
@@ -269,6 +271,30 @@ cc_library(
         "//xla/python/ifrt:test_util",
     ],
     alwayslink = True,
+)
+
+cc_library(
+    name = "pjrt_attribute_map_util",
+    srcs = ["pjrt_attribute_map_util.cc"],
+    hdrs = ["pjrt_attribute_map_util.h"],
+    compatible_with = get_compatible_with_portable(),
+    deps = [
+        "//xla/pjrt:pjrt_common",
+        "//xla/python/ifrt:attribute_map",
+        "@com_google_absl//absl/container:flat_hash_map",
+    ],
+)
+
+xla_cc_test(
+    name = "pjrt_attribute_map_util_test",
+    srcs = ["pjrt_attribute_map_util_test.cc"],
+    deps = [
+        ":pjrt_attribute_map_util",
+        "//xla/pjrt:pjrt_common",
+        "//xla/python/ifrt:attribute_map",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_googletest//:gtest_main",
+    ],
 )
 
 cc_library(
