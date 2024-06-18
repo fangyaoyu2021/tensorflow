@@ -22,6 +22,8 @@ limitations under the License.
 #include <string>
 #include <vector>
 
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
 #include "absl/algorithm/container.h"
 #include "absl/strings/string_view.h"
 #include "xla/hlo/ir/hlo_computation.h"
@@ -518,4 +520,80 @@ INSTANTIATE_TEST_SUITE_P(GetParticipatingDevices, GetParticipatingDevicesTest,
                          testing::ValuesIn(GetTestCases()));
 
 }  // namespace GetParticipatingDevicesTest
+
+namespace GetPariticipantCountsForReplicaGroupsTest {
+
+struct TestCase {
+  std::string test_name;
+  std::vector<std::vector<int64_t>> replica_groups;
+  CollectiveOpGroupMode group_mode;
+  int64_t num_replicas;
+  int64_t num_partitions;
+  std::vector<int64_t> expected;
+};
+
+class GetPariticipantCountsForReplicaGroupsTest
+    : public testing::TestWithParam<TestCase> {};
+
+TEST_P(GetPariticipantCountsForReplicaGroupsTest, Test) {
+  const TestCase &tc = GetParam();
+
+  std::vector<ReplicaGroup> replica_groups;
+  absl::c_transform(tc.replica_groups, std::back_inserter(replica_groups),
+                    [](const std::vector<int64_t> &ids) {
+                      ReplicaGroup group;
+                      for (auto id : ids) {
+                        group.add_replica_ids(id);
+                      }
+                      return group;
+                    });
+  TF_ASSERT_OK_AND_ASSIGN(
+      std::vector<int64_t> actual,
+      GetPariticipantCountsForReplicaGroups(tc.num_replicas, tc.num_partitions,
+                                            replica_groups, tc.group_mode));
+  EXPECT_THAT(actual, testing::ElementsAreArray(tc.expected));
+}
+
+std::vector<TestCase> GetTestCases() {
+  return {
+      {
+          .test_name = "CrossReplicaEmptyGroup",
+          .replica_groups = {},
+          .group_mode = CollectiveOpGroupMode::kCrossReplica,
+          .num_replicas = 8,
+          .num_partitions = 1,
+          .expected = {8},
+      },
+      {
+          .test_name = "CrossReplicaWithPartitions",
+          .replica_groups = {{0, 1}, {2, 3}},
+          .group_mode = CollectiveOpGroupMode::kCrossReplica,
+          .num_replicas = 4,
+          .num_partitions = 2,
+          .expected = {2, 2, 2, 2},
+      },
+      {.test_name = "CrossReplicaAndPartition",
+       .replica_groups = {{0, 1}, {2, 3}},
+       .group_mode = CollectiveOpGroupMode::kCrossReplicaAndPartition,
+       .num_replicas = 4,
+       .num_partitions = 2,
+       .expected = {4, 4}},
+      {.test_name = "FlattenedID",
+       .replica_groups = {{0}, {1}, {2}, {3}, {4}, {5}, {6}, {7}},
+       .group_mode = CollectiveOpGroupMode::kFlattenedID,
+       .num_replicas = 4,
+       .num_partitions = 2,
+       .expected = {1, 1, 1, 1, 1, 1, 1, 1}},
+  };
+}
+INSTANTIATE_TEST_SUITE_P(
+    GetPariticipantCountsForReplicaGroups,
+    GetPariticipantCountsForReplicaGroupsTest,
+    testing::ValuesIn(GetTestCases()),
+    [](const testing::TestParamInfo<
+        GetPariticipantCountsForReplicaGroupsTest::ParamType> &info) {
+      return info.param.test_name;
+    });
+
+}  // namespace GetPariticipantCountsForReplicaGroupsTest
 }  // namespace xla
