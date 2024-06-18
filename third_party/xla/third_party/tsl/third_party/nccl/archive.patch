@@ -3,7 +3,7 @@ similarity index 100%
 rename from src/device/common.cu
 rename to src/device/common.cu.cc
 diff --git a/src/device/common.h b/src/device/common.h
-index 97581f7..134fdb8 100644
+index d8581d3..09ac3b6 100644
 --- a/src/device/common.h
 +++ b/src/device/common.h
 @@ -15,7 +15,7 @@
@@ -14,9 +14,9 @@ index 97581f7..134fdb8 100644
 +extern __device__ ncclDevFuncPtr_t ncclDevFuncTable[];
  
  struct ncclShmemGroup {
-   ncclConnInfo *recvConns[NCCL_MAX_NVLS_ARITY];
+   ncclConnInfo *recvConns[NCCL_MAX_ARITY];
 diff --git a/src/device/generate.py b/src/device/generate.py
-index 0b053de..87bf6cb 100755
+index 43de85d..87cd677 100755
 --- a/src/device/generate.py
 +++ b/src/device/generate.py
 @@ -195,7 +195,7 @@ kernel_funcs = sorted(set(best_kernel(*fn) for fn in primary_funcs))
