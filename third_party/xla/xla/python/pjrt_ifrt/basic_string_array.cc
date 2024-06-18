@@ -22,6 +22,7 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "absl/hash/hash.h"
 #include "absl/log/check.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
@@ -49,6 +50,45 @@ limitations under the License.
 
 namespace xla {
 namespace ifrt {
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// BasicStringArrayLayout
+//
+
+BasicStringArrayLayout::BasicStringArrayLayout(int num_dimensions)
+    : num_dimensions_(num_dimensions) {}
+
+std::string BasicStringArrayLayout::Serialize() const {
+  // We just need the number of dimensions to reconstruct the
+  // BasicStringArrayLayout. We may need to investigate more sophisticated
+  // serialization formats such as protos, or xml if and when this class has
+  // more complex information.
+  return absl::StrCat(num_dimensions_);
+}
+
+std::string BasicStringArrayLayout::ToString() const {
+  return absl::StrCat("BasicStringArrayLayout: Dense, major-to-minor, with ",
+                      num_dimensions_, " dimensions.");
+}
+
+bool BasicStringArrayLayout::operator==(const PjRtLayout& other) const {
+  auto* other_basic_string_array_layout =
+      dynamic_cast<const xla::ifrt::BasicStringArrayLayout*>(&other);
+  if (other_basic_string_array_layout == nullptr) {
+    return false;
+  }
+  return (num_dimensions_ == other_basic_string_array_layout->num_dimensions_);
+}
+
+void BasicStringArrayLayout::Hash(absl::HashState state) const {
+  absl::HashState::combine(std::move(state), num_dimensions_);
+}
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// BasicStringArray
+//
 
 char BasicStringArray::ID = 0;
 
@@ -370,7 +410,11 @@ absl::StatusOr<tsl::RCReference<Array>> BasicStringArray::FullyReplicatedShard(
 }
 
 absl::StatusOr<std::unique_ptr<PjRtLayout>> BasicStringArray::layout() const {
-  return absl::UnimplementedError("Not implemented");
+  absl::MutexLock lock(&mu_);
+  if (is_deleted_) {
+    return absl::FailedPreconditionError("Array has already been deleted");
+  }
+  return std::make_unique<BasicStringArrayLayout>(shape_.dims().size());
 }
 
 std::string BasicStringArray::DebugString() const {

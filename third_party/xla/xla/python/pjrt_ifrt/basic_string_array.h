@@ -21,15 +21,19 @@ limitations under the License.
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/base/attributes.h"
 #include "absl/base/thread_annotations.h"
 #include "absl/container/inlined_vector.h"
+#include "absl/hash/hash.h"
 #include "absl/log/check.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/types/span.h"
+#include "llvm/Support/Casting.h"
 #include "llvm/Support/ExtensibleRTTI.h"
 #include "xla/pjrt/pjrt_layout.h"
 #include "xla/python/ifrt/array.h"
@@ -41,6 +45,26 @@ limitations under the License.
 
 namespace xla {
 namespace ifrt {
+
+// Describes the layout of a `BasicStringArray`.
+class BasicStringArrayLayout : public PjRtLayout {
+ public:
+  explicit BasicStringArrayLayout(int num_dimensions);
+  BasicStringArrayLayout(const BasicStringArrayLayout& other) = delete;
+
+  ~BasicStringArrayLayout() override = default;
+
+  std::string Serialize() const override;
+  std::string ToString() const override;
+  bool operator==(const PjRtLayout& other) const override;
+
+ protected:
+  void Hash(absl::HashState state) const override;
+
+ private:
+  // The number of dimensions in the layout.
+  int num_dimensions_;
+};
 
 // `BasicStringArray` implements an `ifrt::Array` by wrapping a local (aka host)
 // string buffer. This object is expected to live exclusively in the IFRT layer,
