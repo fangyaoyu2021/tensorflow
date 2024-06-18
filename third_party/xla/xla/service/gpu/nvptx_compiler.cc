@@ -182,6 +182,7 @@ absl::Status NVPTXCompiler::OptimizeHloConvolutionCanonicalization(
     HloModule* hlo_module, se::GpuComputeCapability gpu_version,
     se::dnn::VersionInfo dnn_version,
     se::DeviceMemoryAllocator* device_allocator) {
+  LOG(ERROR) << "Running OptimizeHloConvolutionCanonicalization()";
   auto cuda_compute_capability =
       std::get<se::CudaComputeCapability>(gpu_version);
   // Convert convolutions into CustomCalls to cudnn, then canonicalize them
@@ -254,6 +255,7 @@ absl::Status NVPTXCompiler::OptimizeHloConvolutionCanonicalization(
   // by constant folding.
   pipeline.AddPass<HloConstantFolding>();
   TF_RETURN_IF_ERROR(pipeline.Run(hlo_module).status());
+  LOG(ERROR) << "Finished running OptimizeHloConvolutionCanonicalization()";
 
   return absl::OkStatus();
 }
@@ -262,6 +264,7 @@ absl::Status NVPTXCompiler::OptimizeHloPostLayoutAssignment(
     HloModule* hlo_module, se::StreamExecutor* stream_exec,
     const CompileOptions& options, const TargetConfig& gpu_target_config,
     tsl::thread::ThreadPool* thread_pool) {
+  LOG(ERROR) << "Running OptimizeHloPostLayoutAssignment()";
   // This needs to run before GemmRewriter, which is part of
   // OptimizeHloPostLayoutAssignment().
   auto cuda_compute_capability = std::get<se::CudaComputeCapability>(
@@ -339,7 +342,7 @@ absl::Status NVPTXCompiler::OptimizeHloPostLayoutAssignment(
     post_pipeline.AddPass<CuDnnWorkspaceRewriter>(*stream_exec);
   }
   TF_RETURN_IF_ERROR(post_pipeline.Run(hlo_module).status());
-
+  LOG(ERROR) << "Finished running OptimizeHloPostLayoutAssignment()";
   return absl::OkStatus();
 }
 
@@ -535,6 +538,7 @@ NVPTXCompiler::CompileTargetBinary(const HloModuleConfig& module_config,
                                    bool relocatable,
                                    const HloModule* debug_module,
                                    const CompileOptions& options) {
+  LOG(ERROR) << "Running CompileTargetBinary()";
   std::unique_ptr<llvm::Module> loaded_module =
       MaybeLoadLLVMFromFile(debug_module, llvm_module);
   llvm::Module* selected_module = nullptr;
@@ -574,6 +578,7 @@ NVPTXCompiler::CompileTargetBinary(const HloModuleConfig& module_config,
   if (!maybe_cubin.ok()) {
     return maybe_cubin.status();
   }
+  LOG(ERROR) << "Finished unning CompileTargetBinary()";
   return BackendCompileResult{std::move(ptx), std::move(maybe_cubin.value())};
 }
 

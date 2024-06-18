@@ -43,15 +43,18 @@ absl::StatusOr<std::vector<std::unique_ptr<Executable>>> LLVMCompiler::Compile(
   std::vector<std::unique_ptr<HloModule>> modules =
       module_group->ConsumeModules();
   for (size_t i = 0; i < modules.size(); i++) {
+    LOG(ERROR) << "processing module " << i;
     tsl::profiler::ScopedAnnotation annotation{[&] {
       return absl::StrFormat("XlaCompile:#module=%s,program_id=%d#",
                              modules[i]->name(), modules[i]->unique_id());
     }};
     TF_ASSIGN_OR_RETURN(modules[i], RunHloPasses(std::move(modules[i]),
                                                  stream_execs[i][0], options));
+    LOG(ERROR) << "RunBackend call";
     TF_ASSIGN_OR_RETURN(
         std::unique_ptr<Executable> executable,
         RunBackend(std::move(modules[i]), stream_execs[i][0], options));
+    LOG(ERROR) << "Done RunBackend call";
     result.push_back(std::move(executable));
   }
 
