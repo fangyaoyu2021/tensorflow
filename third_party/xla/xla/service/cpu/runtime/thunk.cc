@@ -15,15 +15,21 @@ limitations under the License.
 
 #include "xla/service/cpu/runtime/thunk.h"
 
+#include <cstdint>
 #include <memory>
 #include <ostream>
 #include <string>
 #include <string_view>
 #include <utility>
 
-#include "absl/status/status.h"
+#include "xla/executable_run_options.h"
+#include "xla/service/cpu/collectives_interface.h"
+#include "xla/service/cpu/cpu_executable_run_options.h"
+#include "xla/service/cpu/in_process_collectives.h"
+#include "xla/service/global_device_id.h"
+#include "xla/stream_executor/stream.h"
+#include "xla/stream_executor/stream_executor.h"
 #include "xla/tsl/concurrency/async_value_ref.h"
-#include "tsl/platform/errors.h"
 #include "tsl/platform/logging.h"
 #include "tsl/profiler/lib/traceme.h"
 #include "tsl/profiler/lib/traceme_encode.h"
@@ -56,6 +62,40 @@ std::string_view Thunk::KindToString(Kind kind) {
       return "while";
   }
 }
+
+absl::StatusOr<Thunk::CollectiveExecuteParams>
+Thunk::CollectiveExecuteParams::Create(
+    const ExecutableRunOptions* run_options) {
+  // Device ordinal must be set by caller and passed in run options, if not,
+  // we use the device ordinal from the parent StreamExecutor.
+  int32_t device_ordinal =
+      run_options->device_ordinal() >= 0
+          ? run_options->device_ordinal()
+          : run_options->stream()->parent()->device_ordinal();
+
+  // If CPU executable run options are set, use the collectives interface
+  // provided by the executable run options. Otherwise, use the in-process
+  // collectives interface.
+  static auto* in_process_collectives = new runtime::InProcessCollectives();
+  CollectivesInterface* collectives =
+      run_options->cpu_executable_run_options()
+          ? run_options->cpu_executable_run_options()->collectives()
+          : in_process_collectives;
+
+  return CollectiveExecuteParams{run_options->run_id(), device_ordinal,
+                                 GlobalDeviceId(run_options->device_ordinal()),
+                                 run_options->device_assignment(), collectives};
+}
+
+Thunk::CollectiveExecuteParams::CollectiveExecuteParams(
+    RunId run_id, int64_t local_device_ordinal, GlobalDeviceId global_device_id,
+    const DeviceAssignment* device_assignment,
+    CollectivesInterface* collectives)
+    : run_id(run_id),
+      local_device_ordinal(local_device_ordinal),
+      global_device_id(global_device_id),
+      device_assignment(device_assignment),
+      collectives(collectives) {}
 
 tsl::AsyncValueRef<Thunk::ExecuteEvent> Thunk::OkExecuteEvent() {
   static tsl::AsyncValueOwningRef<ExecuteEvent>* event = [] {
