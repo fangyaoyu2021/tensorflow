@@ -194,6 +194,7 @@ absl::StatusOr<ThunkSequence> ThunkEmitter::EmitHloInstruction(
     case HloOpcode::kTan:
     case HloOpcode::kTanh:
     case HloOpcode::kXor:
+    case HloOpcode::kGather:
       return EmitElementalKernelThunk(instruction);
 
     case HloOpcode::kAllReduce:
