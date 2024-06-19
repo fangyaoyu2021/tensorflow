@@ -13,37 +13,33 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef XLA_SERVICE_CPU_RUNTIME_ALL_REDUCE_THUNK_H_
-#define XLA_SERVICE_CPU_RUNTIME_ALL_REDUCE_THUNK_H_
+#ifndef XLA_SERVICE_CPU_RUNTIME_REPLICA_ID_THUNK_H_
+#define XLA_SERVICE_CPU_RUNTIME_REPLICA_ID_THUNK_H_
 
 #include <memory>
 
 #include "absl/status/statusor.h"
-#include "xla/service/collective_ops_utils.h"
-#include "xla/service/cpu/runtime/collective_thunk.h"
+#include "xla/service/buffer_assignment.h"
+#include "xla/service/cpu/runtime/thunk.h"
 #include "xla/tsl/concurrency/async_value_ref.h"
-#include "xla/xla_data.pb.h"
 
 namespace xla::cpu {
 
-class AllReduceThunk final : public CollectiveThunk {
+class ReplicaIdThunk final : public Thunk {
  public:
-  using CollectiveThunk::OpParams;
-
-  static absl::StatusOr<std::unique_ptr<AllReduceThunk>> Create(
-      Info info, ReductionKind reduction_kind, OpParams op_params,
-      OpBuffers op_buffers, bool single_replica);
+  static absl::StatusOr<std::unique_ptr<ReplicaIdThunk>> Create(
+      Info info, BufferAllocation::Slice replica_id_buffer);
 
   tsl::AsyncValueRef<ExecuteEvent> Execute(const ExecuteParams& params) final;
 
- private:
-  AllReduceThunk(Info info, ReductionKind reduction_kind, OpParams op_params,
-                 OpBuffers op_buffers, bool single_replica);
+  BufferUses buffer_uses() const final;
 
-  ReductionKind reduction_kind_;
-  bool single_replica_;
+ private:
+  ReplicaIdThunk(Info info, BufferAllocation::Slice replica_id_buffer);
+
+  BufferAllocation::Slice replica_id_buffer_;
 };
 
 }  // namespace xla::cpu
 
-#endif  // XLA_SERVICE_CPU_RUNTIME_ALL_REDUCE_THUNK_H_
+#endif  // XLA_SERVICE_CPU_RUNTIME_REPLICA_ID_THUNK_H_

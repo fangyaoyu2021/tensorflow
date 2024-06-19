@@ -472,10 +472,13 @@ void AllReduceImpl(const ExecutableRunOptions* run_options,
 
   CollectivesInterface* collectives = GetCollectivesImpl(run_options);
 
+  VLOG(0) << "Key: " << rendezvous_key.ToString() << "; rank=" << rank;
+
   auto communicator =
       collectives->GetCommunicator(rendezvous_key.global_devices, rank).value();
   for (int i = 0; i < num_buffers; i++) {
     Shape subshape = num_buffers == 1 ? shape : shape.tuple_shapes(i);
+    VLOG(0) << "Subshape: " << subshape.ToString(true);
     TF_CHECK_OK(communicator->AllReduce(
         rendezvous_key, static_cast<ReductionKind>(reduction_kind),
         subshape.element_type(), ShapeUtil::ElementsIn(subshape),

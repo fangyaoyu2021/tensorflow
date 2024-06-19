@@ -67,9 +67,6 @@ class ThunkEmitter {
   absl::StatusOr<ThunkSequence> EmitHloInstruction(
       const HloInstruction* instruction);
 
-  absl::StatusOr<ThunkSequence> EmitAllReduceThunk(
-      const HloInstruction* instruction);
-
   absl::StatusOr<ThunkSequence> EmitCallThunk(
       const HloInstruction* instruction);
 
@@ -106,6 +103,15 @@ class ThunkEmitter {
       const HloInstruction* instruction);
 
   absl::StatusOr<ThunkSequence> EmitDotThunk(const HloInstruction* instruction);
+
+  absl::StatusOr<ThunkSequence> EmitReplicaIdThunk(
+      const HloInstruction* instruction);
+
+  absl::StatusOr<ThunkSequence> EmitAllReduceThunk(
+      const HloInstruction* instruction);
+
+  absl::StatusOr<ThunkSequence> EmitReduceScatterThunk(
+      const HloInstruction* instruction);
 
   // Returns the list of buffer allocation slices assigned to the given
   // instruction that will be passed to the host kernel as arguments: a
